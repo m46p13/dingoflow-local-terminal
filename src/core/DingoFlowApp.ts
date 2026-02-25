@@ -17,6 +17,8 @@ export interface DingoFlowLatencyOptions {
   maxAsrWindowMs: number;
   adaptiveAsrWindow: boolean;
   parakeetFinalPass: boolean;
+  silenceGateDbfs: number;
+  speechHangoverMs: number;
   parakeetStreamContextLeft: number;
   parakeetStreamContextRight: number;
   parakeetStreamDepth: number;
@@ -32,6 +34,8 @@ const DEFAULT_LATENCY_OPTIONS: DingoFlowLatencyOptions = {
   maxAsrWindowMs: 640,
   adaptiveAsrWindow: true,
   parakeetFinalPass: false,
+  silenceGateDbfs: -52,
+  speechHangoverMs: 420,
   parakeetStreamContextLeft: 64,
   parakeetStreamContextRight: 8,
   parakeetStreamDepth: 1
@@ -112,6 +116,7 @@ export class DingoFlowApp extends EventEmitter {
   private dynamicNormalAsrWindowMs: number;
   private ewmaAsrRtf = 1.0;
   private ewmaAsrMs = 0;
+  private speechHangoverUntilMs = 0;
 
   public constructor(
     private readonly deps: DingoFlowDependencies,
@@ -241,6 +246,7 @@ export class DingoFlowApp extends EventEmitter {
     this.dynamicNormalAsrWindowMs = this.options.normalAsrWindowMs;
     this.ewmaAsrRtf = 1.0;
     this.ewmaAsrMs = this.options.normalAsrWindowMs;
+    this.speechHangoverUntilMs = 0;
     this.latencyTracker.reset();
 
     try {
@@ -487,6 +493,21 @@ export class DingoFlowApp extends EventEmitter {
   private async processAudioSlice(audioSlice: PendingAudioSlice, requestId: number): Promise<void> {
     const queueDelayMs = Math.max(0, Date.now() - audioSlice.oldestEnqueuedAtMs);
     const audioMs = this.bytesToMs(audioSlice.data.length);
+    const audioLevelDbfs = this.estimateDbfs(audioSlice.data);
+    const nowMs = Date.now();
+    const hasSpeechEnergy = audioLevelDbfs >= this.options.silenceGateDbfs;
+    if (hasSpeechEnergy) {
+      this.speechHangoverUntilMs = nowMs + this.options.speechHangoverMs;
+    } else if (nowMs > this.speechHangoverUntilMs) {
+      this.logger?.debug('Skipping low-energy audio slice', {
+        requestId,
+        audioMs: Math.round(audioMs),
+        audioLevelDbfs: Number(audioLevelDbfs.toFixed(1)),
+        silenceGateDbfs: this.options.silenceGateDbfs
+      });
+      return;
+    }
+
     const asrStartedAt = Date.now();
 
     const asrResult = await (this.deps.asr.pushStream
@@ -556,6 +577,31 @@ export class DingoFlowApp extends EventEmitter {
       pendingMs: Math.round(this.bytesToMs(this.pendingAudioBytes)),
       normalWindowMs: this.dynamicNormalAsrWindowMs
     });
+  }
+
+  private estimateDbfs(audio: Buffer): number {
+    if (audio.length < 2) {
+      return -120;
+    }
+
+    let sumSquares = 0;
+    let sampleCount = 0;
+    for (let index = 0; index + 1 < audio.length; index += 2) {
+      const sample = audio.readInt16LE(index) / 32768;
+      sumSquares += sample * sample;
+      sampleCount += 1;
+    }
+
+    if (sampleCount === 0) {
+      return -120;
+    }
+
+    const rms = Math.sqrt(sumSquares / sampleCount);
+    if (rms <= 0) {
+      return -120;
+    }
+
+    return 20 * Math.log10(rms);
   }
 
   private updateAdaptiveWindow(audioMs: number, asrElapsedMs: number, pendingMs: number): void {

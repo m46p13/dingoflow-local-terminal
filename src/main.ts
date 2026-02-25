@@ -92,6 +92,8 @@ const bootstrap = async (): Promise<void> => {
       maxAsrWindowMs: config.maxAsrWindowMs,
       adaptiveAsrWindow: config.adaptiveAsrWindow,
       parakeetFinalPass: config.parakeetFinalPass,
+      silenceGateDbfs: config.silenceGateDbfs,
+      speechHangoverMs: config.speechHangoverMs,
       parakeetStreamContextLeft: config.parakeetStreamContextLeft,
       parakeetStreamContextRight: config.parakeetStreamContextRight,
       parakeetStreamDepth: config.parakeetStreamDepth

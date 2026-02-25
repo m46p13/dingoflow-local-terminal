@@ -236,6 +236,8 @@ export const resolveConfig = (): AppConfig => {
       process.env.DINGOFLOW_PARAKEET_FINAL_PASS,
       defaultParakeetFinalPass
     ),
+    silenceGateDbfs: Number.parseFloat(process.env.DINGOFLOW_SILENCE_GATE_DBFS ?? '-52'),
+    speechHangoverMs: parseIntOrDefault(process.env.DINGOFLOW_SPEECH_HANGOVER_MS, 420),
     parakeetStreamContextLeft: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_LEFT, 64),
     parakeetStreamContextRight: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_RIGHT, 8),
     parakeetStreamDepth: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_STREAM_DEPTH, 1),
@@ -324,6 +326,14 @@ export const validateConfig = (config: AppConfig): string[] => {
 
   if (config.maxAsrWindowMs < 100 || config.maxAsrWindowMs > 4000) {
     errors.push('DINGOFLOW_ASR_WINDOW_MAX_MS must be between 100 and 4000 milliseconds.');
+  }
+
+  if (!Number.isFinite(config.silenceGateDbfs) || config.silenceGateDbfs < -90 || config.silenceGateDbfs > -10) {
+    errors.push('DINGOFLOW_SILENCE_GATE_DBFS must be between -90 and -10.');
+  }
+
+  if (config.speechHangoverMs < 80 || config.speechHangoverMs > 2000) {
+    errors.push('DINGOFLOW_SPEECH_HANGOVER_MS must be between 80 and 2000 milliseconds.');
   }
 
   if (

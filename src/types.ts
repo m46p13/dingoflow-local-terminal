@@ -59,6 +59,8 @@ export interface AppConfig {
   maxAsrWindowMs: number;
   adaptiveAsrWindow: boolean;
   parakeetFinalPass: boolean;
+  silenceGateDbfs: number;
+  speechHangoverMs: number;
   parakeetStreamContextLeft: number;
   parakeetStreamContextRight: number;
   parakeetStreamDepth: number;

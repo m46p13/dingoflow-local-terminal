@@ -216,6 +216,8 @@ const run = async () => {
       maxAsrWindowMs: options.maxAsrWindowMs,
       adaptiveAsrWindow: options.adaptiveAsrWindow,
       parakeetFinalPass: options.parakeetFinalPass,
+      silenceGateDbfs: options.silenceGateDbfs,
+      speechHangoverMs: options.speechHangoverMs,
       parakeetStreamContextLeft: options.parakeetStreamContextLeft,
       parakeetStreamContextRight: options.parakeetStreamContextRight,
       parakeetStreamDepth: options.parakeetStreamDepth
