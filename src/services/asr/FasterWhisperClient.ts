@@ -105,7 +105,7 @@ export class FasterWhisperClient {
 
   public async warmup(): Promise<void> {
     await this.worker.start();
-    await this.worker.request({ action: 'warmup' }, 20000);
+    await this.worker.request({ action: 'warmup' }, 180000);
   }
 
   public async transcribe(audioInput: string | Buffer, sampleRate = 16000): Promise<AsrResult> {
