@@ -8,6 +8,17 @@ PY_BIN="${DINGOFLOW_PYTHON_BIN:-python3}"
 
 mkdir -p "${MODEL_DIR}"
 
+if ! "${PY_BIN}" - <<'PY' >/dev/null 2>&1
+import huggingface_hub  # noqa: F401
+PY
+then
+  echo "Installing Python download deps (huggingface_hub, hf_transfer)..."
+  "${PY_BIN}" -m pip --version >/dev/null 2>&1 || "${PY_BIN}" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  "${PY_BIN}" -m pip install --quiet --upgrade huggingface_hub hf_transfer
+fi
+
+export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
+
 "${PY_BIN}" - <<PY
 from huggingface_hub import snapshot_download
 
