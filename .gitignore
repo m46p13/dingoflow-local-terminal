@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.DS_Store
+*.log
+.venv
+python/.venv
+models
+*.wav
+
+release
+build/icon.iconset/

@@ -1,0 +1,79 @@
+{
+  "name": "dingoflow",
+  "version": "0.1.0",
+  "description": "Local-first offline dictation app for macOS",
+  "main": "dist/main.js",
+  "author": "",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "npm run clean && tsc -p tsconfig.json && npm run copy:assets",
+    "build:native:audio": "./scripts/build_native_audio.sh",
+    "build:native:asr": "./scripts/build_native_asr.sh",
+    "build:native:parakeet": "./scripts/build_native_parakeet.sh",
+    "build:native:inject": "./scripts/build_native_injector.sh",
+    "live:terminal": "./scripts/run_terminal_dictation.sh",
+    "export:clean": "./scripts/export_clean_repo.sh",
+    "download:model:parakeet-native": "./scripts/download_parakeet_tdt_onnx.sh",
+    "bench:pipeline": "node scripts/benchmark_pipeline.js",
+    "copy:assets": "mkdir -p dist/renderer && cp src/renderer/index.html src/renderer/renderer.css dist/renderer/",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "dev:electron": "wait-on dist/main.js && electron .",
+    "dev": "concurrently -k \"npm:build:watch\" \"npm:dev:electron\"",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package:mac": "npm run build && electron-builder --mac dmg dir",
+    "package:mac:dmg": "npm run build && electron-builder --mac dmg",
+    "package:mac:app": "npm run build && electron-builder --mac dir"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "concurrently": "^9.1.2",
+    "electron": "^35.1.5",
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.8.3",
+    "vitest": "^2.1.8",
+    "wait-on": "^8.0.3"
+  },
+  "dependencies": {
+    "node-global-key-listener": "^0.3.0"
+  },
+  "build": {
+    "appId": "com.dingoflow.app",
+    "productName": "DingoFlow",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "python/**/*",
+      "native/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  }
+}

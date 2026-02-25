@@ -1,0 +1,25 @@
+:root {
+  color-scheme: light;
+  font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 32px;
+  background: linear-gradient(135deg, #f8f9fc, #eef2f7);
+  color: #0f172a;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0 0 12px;
+}
+
+p {
+  margin: 0;
+  line-height: 1.5;
+}
