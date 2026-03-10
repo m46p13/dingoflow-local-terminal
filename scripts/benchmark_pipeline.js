@@ -218,6 +218,9 @@ const run = async () => {
       parakeetFinalPass: options.parakeetFinalPass,
       silenceGateDbfs: options.silenceGateDbfs,
       speechHangoverMs: options.speechHangoverMs,
+      speechOnsetMs: options.speechOnsetMs,
+      speechPrerollMs: options.speechPrerollMs,
+      speechNoiseFloorMarginDb: options.speechNoiseFloorMarginDb,
       parakeetStreamContextLeft: options.parakeetStreamContextLeft,
       parakeetStreamContextRight: options.parakeetStreamContextRight,
       parakeetStreamDepth: options.parakeetStreamDepth

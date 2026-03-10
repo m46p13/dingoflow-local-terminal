@@ -61,6 +61,9 @@ export interface AppConfig {
   parakeetFinalPass: boolean;
   silenceGateDbfs: number;
   speechHangoverMs: number;
+  speechOnsetMs: number;
+  speechPrerollMs: number;
+  speechNoiseFloorMarginDb: number;
   parakeetStreamContextLeft: number;
   parakeetStreamContextRight: number;
   parakeetStreamDepth: number;

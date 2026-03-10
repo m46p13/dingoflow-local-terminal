@@ -78,6 +78,9 @@ const main = async (): Promise<void> => {
       parakeetFinalPass: config.parakeetFinalPass,
       silenceGateDbfs: config.silenceGateDbfs,
       speechHangoverMs: config.speechHangoverMs,
+      speechOnsetMs: config.speechOnsetMs,
+      speechPrerollMs: config.speechPrerollMs,
+      speechNoiseFloorMarginDb: config.speechNoiseFloorMarginDb,
       parakeetStreamContextLeft: config.parakeetStreamContextLeft,
       parakeetStreamContextRight: config.parakeetStreamContextRight,
       parakeetStreamDepth: config.parakeetStreamDepth

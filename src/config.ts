@@ -238,6 +238,11 @@ export const resolveConfig = (): AppConfig => {
     ),
     silenceGateDbfs: Number.parseFloat(process.env.DINGOFLOW_SILENCE_GATE_DBFS ?? '-52'),
     speechHangoverMs: parseIntOrDefault(process.env.DINGOFLOW_SPEECH_HANGOVER_MS, 420),
+    speechOnsetMs: parseIntOrDefault(process.env.DINGOFLOW_SPEECH_ONSET_MS, 140),
+    speechPrerollMs: parseIntOrDefault(process.env.DINGOFLOW_SPEECH_PREROLL_MS, 180),
+    speechNoiseFloorMarginDb: Number.parseFloat(
+      process.env.DINGOFLOW_SPEECH_NOISE_MARGIN_DB ?? '12'
+    ),
     parakeetStreamContextLeft: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_LEFT, 64),
     parakeetStreamContextRight: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_RIGHT, 8),
     parakeetStreamDepth: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_STREAM_DEPTH, 1),
@@ -334,6 +339,22 @@ export const validateConfig = (config: AppConfig): string[] => {
 
   if (config.speechHangoverMs < 80 || config.speechHangoverMs > 2000) {
     errors.push('DINGOFLOW_SPEECH_HANGOVER_MS must be between 80 and 2000 milliseconds.');
+  }
+
+  if (config.speechOnsetMs < 40 || config.speechOnsetMs > 1000) {
+    errors.push('DINGOFLOW_SPEECH_ONSET_MS must be between 40 and 1000 milliseconds.');
+  }
+
+  if (config.speechPrerollMs < 0 || config.speechPrerollMs > 1000) {
+    errors.push('DINGOFLOW_SPEECH_PREROLL_MS must be between 0 and 1000 milliseconds.');
+  }
+
+  if (
+    !Number.isFinite(config.speechNoiseFloorMarginDb) ||
+    config.speechNoiseFloorMarginDb < 3 ||
+    config.speechNoiseFloorMarginDb > 30
+  ) {
+    errors.push('DINGOFLOW_SPEECH_NOISE_MARGIN_DB must be between 3 and 30.');
   }
 
   if (
