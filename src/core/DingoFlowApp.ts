@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { StructuredLogger } from '../logging/StructuredLogger';
 import { LatencyTracker } from '../perf/LatencyTracker';
 import { SpokenFormattingProcessor } from '../services/commands/SpokenFormattingProcessor';
-import { AsrBackend, AsrResult, DictationResult, FormatMode, AppState } from '../types';
+import { AsrBackend, AsrResult, DictationResult, FormatMode, AppState, LivePreviewState } from '../types';
 import { AudioRecorder } from '../services/capture/AudioRecorder';
 import { SpeechGate } from '../services/capture/SpeechGate';
 
@@ -98,6 +98,7 @@ export declare interface DingoFlowApp {
   on(event: 'stateChanged', listener: (state: AppState) => void): this;
   on(event: 'modeChanged', listener: (mode: FormatMode) => void): this;
   on(event: 'dictationCompleted', listener: (result: DictationResult) => void): this;
+  on(event: 'livePreviewChanged', listener: (preview: LivePreviewState) => void): this;
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -110,7 +111,10 @@ export class DingoFlowApp extends EventEmitter {
   private acceptingAudio = false;
   private asrRequestCount = 0;
   private rawTranscriptParts: string[] = [];
+  private committedRawTranscript = '';
+  private lastPreviewRawTranscript = '';
   private liveInjectedText = '';
+  private livePreviewText = '';
   private sessionAudioChunks: Buffer[] = [];
   private pendingAudioQueue: QueuedAudioChunk[] = [];
   private pendingAudioBytes = 0;
@@ -253,7 +257,10 @@ export class DingoFlowApp extends EventEmitter {
     this.acceptingAudio = true;
     this.asrRequestCount = 0;
     this.rawTranscriptParts = [];
+    this.committedRawTranscript = '';
+    this.lastPreviewRawTranscript = '';
     this.liveInjectedText = '';
+    this.livePreviewText = '';
     this.sessionAudioChunks = [];
     this.pendingAudioQueue = [];
     this.pendingAudioBytes = 0;
@@ -410,7 +417,10 @@ export class DingoFlowApp extends EventEmitter {
       this.recordingActive = false;
       this.asrRequestCount = 0;
       this.rawTranscriptParts = [];
+      this.committedRawTranscript = '';
+      this.lastPreviewRawTranscript = '';
       this.liveInjectedText = '';
+      this.updateLivePreview('');
       this.pendingAudioQueue = [];
       this.pendingAudioBytes = 0;
       this.sessionAudioChunks = [];
@@ -541,56 +551,31 @@ export class DingoFlowApp extends EventEmitter {
       return;
     }
 
-    const rawChunk = asrResult.text.trim();
+    const rawPreview = this.normalizeRawTranscriptText(
+      asrResult.previewText ?? this.buildPreviewFallback(asrResult.text)
+    );
+    if (rawPreview) {
+      this.updateLivePreview(this.renderPreviewText(rawPreview));
+      await this.commitPreviewAgreement(rawPreview, {
+        requestId,
+        queueDelayMs,
+        audioMs,
+        asrElapsedMs
+      });
+      this.lastPreviewRawTranscript = rawPreview;
+      return;
+    }
+
+    const rawChunk = this.normalizeRawTranscriptText(asrResult.text);
     if (!rawChunk) {
       return;
     }
 
-    const commandResult = this.options.spokenFormattingCommands
-      ? this.spokenFormattingProcessor.transform(rawChunk)
-      : { text: rawChunk, appliedCommands: 0 };
-    if (!commandResult.text) {
-      return;
-    }
-
-    const normalizedChunk = this.normalizeLiveChunkOutput(commandResult.text);
-    if (!normalizedChunk) {
-      return;
-    }
-
-    const dedupedChunk = this.dedupeChunkAgainstLiveTranscript(normalizedChunk);
-    if (!dedupedChunk) {
-      return;
-    }
-
-    this.rawTranscriptParts.push(dedupedChunk);
-    this.liveInjectedText += dedupedChunk;
-
-    const injectStartedAt = Date.now();
-    await this.deps.injector.inject(dedupedChunk);
-    const injectElapsedMs = Date.now() - injectStartedAt;
-    const endToEndMs = Math.max(0, Date.now() - audioSlice.oldestEnqueuedAtMs);
-    this.latencyTracker.push({
-      queueMs: queueDelayMs,
-      audioMs,
-      asrMs: asrElapsedMs,
-      injectMs: injectElapsedMs,
-      endToEndMs
-    });
-
-    this.logger?.info('Live slice injected', {
+    await this.commitRawDelta(rawChunk, {
       requestId,
-      rawLength: rawChunk.length,
-      commandLength: commandResult.text.length,
-      spokenCommandsApplied: commandResult.appliedCommands,
-      outputLength: dedupedChunk.length,
-      asrElapsedMs,
-      injectElapsedMs,
-      audioMs,
       queueDelayMs,
-      endToEndMs,
-      pendingMs: Math.round(this.bytesToMs(this.pendingAudioBytes)),
-      normalWindowMs: this.dynamicNormalAsrWindowMs
+      audioMs,
+      asrElapsedMs
     });
   }
 
@@ -627,10 +612,6 @@ export class DingoFlowApp extends EventEmitter {
   }
 
   private async processStreamFlush(): Promise<void> {
-    if (this.options.asrBackend === 'parakeet-native') {
-      return;
-    }
-
     if (!this.deps.asr.flushStream) {
       return;
     }
@@ -641,32 +622,34 @@ export class DingoFlowApp extends EventEmitter {
       return undefined;
     });
 
-    if (!tailResult || !tailResult.text.trim()) {
+    if (!tailResult) {
       return;
     }
 
-    const tailText = tailResult.text.trim();
-    const tailCommandResult = this.options.spokenFormattingCommands
-      ? this.spokenFormattingProcessor.transform(tailText)
-      : { text: tailText, appliedCommands: 0 };
-    if (!tailCommandResult.text) {
+    const rawPreview = this.normalizeRawTranscriptText(
+      tailResult.previewText ?? this.lastPreviewRawTranscript ?? ''
+    );
+    if (rawPreview) {
+      this.updateLivePreview(this.renderPreviewText(rawPreview));
+      await this.commitRawDelta(this.extractUncommittedWordDelta(this.committedRawTranscript, rawPreview), {
+        requestId: this.asrRequestCount + 1,
+        queueDelayMs: 0,
+        audioMs: 0,
+        asrElapsedMs: 0
+      });
       return;
     }
 
-    const normalizedTail = this.normalizeLiveChunkOutput(tailCommandResult.text);
-    if (!normalizedTail) {
+    const tailText = this.normalizeRawTranscriptText(tailResult.text);
+    if (!tailText) {
       return;
     }
 
-    this.rawTranscriptParts.push(normalizedTail);
-    this.liveInjectedText += normalizedTail;
-    await this.deps.injector.inject(normalizedTail);
-
-    this.logger?.info('Live stream flush injected', {
-      rawLength: tailText.length,
-      commandLength: tailCommandResult.text.length,
-      spokenCommandsApplied: tailCommandResult.appliedCommands,
-      outputLength: normalizedTail.length
+    await this.commitRawDelta(tailText, {
+      requestId: this.asrRequestCount + 1,
+      queueDelayMs: 0,
+      audioMs: 0,
+      asrElapsedMs: 0
     });
   }
 
@@ -749,6 +732,166 @@ export class DingoFlowApp extends EventEmitter {
 
     const needsTrailingWhitespace = /[\s\n]$/.test(nextChunk);
     return `${dedupedWords.join(' ')}${needsTrailingWhitespace ? ' ' : ''}`;
+  }
+
+  private async commitPreviewAgreement(
+    rawPreview: string,
+    metrics: { requestId: number; queueDelayMs: number; audioMs: number; asrElapsedMs: number }
+  ): Promise<void> {
+    if (!this.lastPreviewRawTranscript) {
+      return;
+    }
+
+    const agreedPreview = this.longestCommonWordPrefix(this.lastPreviewRawTranscript, rawPreview);
+    const rawDelta = this.extractUncommittedWordDelta(this.committedRawTranscript, agreedPreview);
+    await this.commitRawDelta(rawDelta, metrics);
+  }
+
+  private async commitRawDelta(
+    rawDelta: string,
+    metrics: { requestId: number; queueDelayMs: number; audioMs: number; asrElapsedMs: number }
+  ): Promise<void> {
+    const normalizedRawDelta = this.normalizeRawTranscriptText(rawDelta);
+    if (!normalizedRawDelta) {
+      return;
+    }
+
+    this.committedRawTranscript = this.appendWordTranscript(this.committedRawTranscript, normalizedRawDelta);
+
+    const commandResult = this.options.spokenFormattingCommands
+      ? this.spokenFormattingProcessor.transform(normalizedRawDelta)
+      : { text: normalizedRawDelta, appliedCommands: 0 };
+    if (!commandResult.text) {
+      return;
+    }
+
+    const normalizedChunk = this.normalizeLiveChunkOutput(commandResult.text);
+    if (!normalizedChunk) {
+      return;
+    }
+
+    const dedupedChunk = this.dedupeChunkAgainstLiveTranscript(normalizedChunk);
+    if (!dedupedChunk) {
+      return;
+    }
+
+    this.rawTranscriptParts.push(dedupedChunk);
+    this.liveInjectedText += dedupedChunk;
+
+    const injectStartedAt = Date.now();
+    await this.deps.injector.inject(dedupedChunk);
+    const injectElapsedMs = Date.now() - injectStartedAt;
+    const endToEndMs = Math.max(0, metrics.queueDelayMs + metrics.asrElapsedMs + injectElapsedMs);
+    this.latencyTracker.push({
+      queueMs: metrics.queueDelayMs,
+      audioMs: metrics.audioMs,
+      asrMs: metrics.asrElapsedMs,
+      injectMs: injectElapsedMs,
+      endToEndMs
+    });
+
+    this.logger?.info('Stable live chunk injected', {
+      requestId: metrics.requestId,
+      rawLength: normalizedRawDelta.length,
+      commandLength: commandResult.text.length,
+      spokenCommandsApplied: commandResult.appliedCommands,
+      outputLength: dedupedChunk.length,
+      asrElapsedMs: metrics.asrElapsedMs,
+      injectElapsedMs,
+      audioMs: metrics.audioMs,
+      queueDelayMs: metrics.queueDelayMs,
+      endToEndMs,
+      pendingMs: Math.round(this.bytesToMs(this.pendingAudioBytes)),
+      normalWindowMs: this.dynamicNormalAsrWindowMs
+    });
+  }
+
+  private buildPreviewFallback(rawDelta: string): string {
+    const normalizedDelta = this.normalizeRawTranscriptText(rawDelta);
+    if (!normalizedDelta) {
+      return this.lastPreviewRawTranscript;
+    }
+
+    return this.appendWordTranscript(this.committedRawTranscript, normalizedDelta);
+  }
+
+  private renderPreviewText(rawPreview: string): string {
+    const commandResult = this.options.spokenFormattingCommands
+      ? this.spokenFormattingProcessor.transform(rawPreview)
+      : { text: rawPreview, appliedCommands: 0 };
+
+    return this.normalizeRawTranscriptText(commandResult.text);
+  }
+
+  private updateLivePreview(previewText: string): void {
+    if (this.livePreviewText === previewText) {
+      return;
+    }
+
+    this.livePreviewText = previewText;
+    this.emit('livePreviewChanged', {
+      previewText,
+      committedText: this.liveInjectedText.trimEnd()
+    });
+  }
+
+  private normalizeRawTranscriptText(text: string): string {
+    return text.split(/\s+/).filter(Boolean).join(' ').trim();
+  }
+
+  private appendWordTranscript(existing: string, delta: string): string {
+    const left = this.normalizeRawTranscriptText(existing);
+    const right = this.normalizeRawTranscriptText(delta);
+    if (!left) {
+      return right;
+    }
+    if (!right) {
+      return left;
+    }
+
+    return `${left} ${right}`.trim();
+  }
+
+  private longestCommonWordPrefix(leftText: string, rightText: string): string {
+    const leftWords = this.normalizeRawTranscriptText(leftText).split(' ').filter(Boolean);
+    const rightWords = this.normalizeRawTranscriptText(rightText).split(' ').filter(Boolean);
+    const max = Math.min(leftWords.length, rightWords.length);
+    let count = 0;
+
+    for (let index = 0; index < max; index += 1) {
+      if (this.normalizeAgreementWord(leftWords[index]) !== this.normalizeAgreementWord(rightWords[index])) {
+        break;
+      }
+      count += 1;
+    }
+
+    return rightWords.slice(0, count).join(' ');
+  }
+
+  private extractUncommittedWordDelta(committedText: string, nextText: string): string {
+    const committedWords = this.normalizeRawTranscriptText(committedText).split(' ').filter(Boolean);
+    const nextWords = this.normalizeRawTranscriptText(nextText).split(' ').filter(Boolean);
+    if (committedWords.length === 0) {
+      return nextWords.join(' ');
+    }
+    if (nextWords.length <= committedWords.length) {
+      return '';
+    }
+
+    for (let index = 0; index < committedWords.length; index += 1) {
+      if (this.normalizeAgreementWord(committedWords[index]) !== this.normalizeAgreementWord(nextWords[index])) {
+        return '';
+      }
+    }
+
+    return nextWords.slice(committedWords.length).join(' ');
+  }
+
+  private normalizeAgreementWord(word: string): string {
+    return word
+      .toLowerCase()
+      .replace(/^[^a-z0-9']+/g, '')
+      .replace(/[^a-z0-9']+$/g, '');
   }
 
   private msToBytes(ms: number): number {

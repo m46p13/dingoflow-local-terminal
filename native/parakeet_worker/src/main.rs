@@ -167,7 +167,11 @@ impl NativeParakeetEngine {
         Ok(())
     }
 
-    fn stream_push(&mut self, audio_chunk: Vec<f32>, sample_rate: u32) -> Result<(String, f64), String> {
+    fn stream_push(
+        &mut self,
+        audio_chunk: Vec<f32>,
+        sample_rate: u32,
+    ) -> Result<(String, String, String, f64), String> {
         if sample_rate != INPUT_SAMPLE_RATE {
             return Err(format!(
                 "sampleRate mismatch: expected {INPUT_SAMPLE_RATE}, got {sample_rate}"
@@ -190,7 +194,7 @@ impl NativeParakeetEngine {
             if state.audio.len() < self.min_stream_samples
                 || state.pending_samples < self.decode_interval_samples
             {
-                return Ok((String::new(), 0.0));
+                return Ok((String::new(), String::new(), state.committed_text.clone(), 0.0));
             }
 
             state.pending_samples = 0;
@@ -241,19 +245,29 @@ impl NativeParakeetEngine {
             }
         }
 
+        let preview_suffix = collect_preview_text(
+            &result.tokens,
+            decode_window_start_sample,
+            state.committed_until_sample,
+            decode_sample_rate,
+            self.stream_timestamp_tolerance_samples,
+        );
+        let preview_text = join_preview_text(&state.committed_text, &preview_suffix);
+        let committed_text = normalize_text(&state.committed_text);
+
         trim_stream_buffer(state, self.stream_trim_keep_samples);
 
-        Ok((normalize_text(&delta_text), duration_seconds))
+        Ok((normalize_text(&delta_text), preview_text, committed_text, duration_seconds))
     }
 
-    fn stream_flush(&mut self) -> Result<(String, f64), String> {
+    fn stream_flush(&mut self) -> Result<(String, String, String, f64), String> {
         let (decode_audio, decode_sample_rate, decode_window_start_sample, committed_until_sample) = {
             let Some(state) = self.stream.as_mut() else {
-                return Ok((String::new(), 0.0));
+                return Ok((String::new(), String::new(), String::new(), 0.0));
             };
 
             if state.audio.is_empty() {
-                return Ok((String::new(), 0.0));
+                return Ok((String::new(), state.committed_text.clone(), state.committed_text.clone(), 0.0));
             }
 
             (
@@ -279,7 +293,7 @@ impl NativeParakeetEngine {
         );
 
         let Some(state) = self.stream.as_mut() else {
-            return Ok((String::new(), duration_seconds));
+            return Ok((String::new(), String::new(), String::new(), duration_seconds));
         };
 
         if !delta_text.is_empty() {
@@ -289,7 +303,14 @@ impl NativeParakeetEngine {
             }
         }
 
-        Ok((normalize_text(&delta_text), duration_seconds))
+        let committed_text = normalize_text(&state.committed_text);
+
+        Ok((
+            normalize_text(&delta_text),
+            committed_text.clone(),
+            committed_text,
+            duration_seconds,
+        ))
     }
 
     fn stream_close(&mut self) {
@@ -563,11 +584,18 @@ fn decode_audio(req: &Request, framed_audio: &[u8]) -> Result<(Vec<f32>, u32), S
     Err("Missing binary audio payload, audioBase64, or audio path".into())
 }
 
-fn make_asr_result(text: String, duration_seconds: f64) -> serde_json::Value {
+fn make_asr_result(
+    text: String,
+    duration_seconds: f64,
+    preview_text: Option<String>,
+    committed_text: Option<String>,
+) -> serde_json::Value {
     json!({
         "text": text,
         "language": "en",
-        "durationSeconds": ((duration_seconds * 1000.0).round() / 1000.0)
+        "durationSeconds": ((duration_seconds * 1000.0).round() / 1000.0),
+        "previewText": preview_text,
+        "committedText": committed_text
     })
 }
 
@@ -645,10 +673,15 @@ fn run_server(mut engine: NativeParakeetEngine) -> Result<(), String> {
                     "stream_push" => match decode_audio(&req, &audio_bytes)
                         .and_then(|(audio, sample_rate)| engine.stream_push(audio, sample_rate))
                     {
-                        Ok((text, duration_seconds)) => json!({
+                        Ok((text, preview_text, committed_text, duration_seconds)) => json!({
                             "id": request_id,
                             "ok": true,
-                            "result": make_asr_result(text, duration_seconds)
+                            "result": make_asr_result(
+                                text,
+                                duration_seconds,
+                                Some(preview_text),
+                                Some(committed_text)
+                            )
                         }),
                         Err(error) => json!({
                             "id": request_id,
@@ -657,10 +690,15 @@ fn run_server(mut engine: NativeParakeetEngine) -> Result<(), String> {
                         }),
                     },
                     "stream_flush" => match engine.stream_flush() {
-                        Ok((text, duration_seconds)) => json!({
+                        Ok((text, preview_text, committed_text, duration_seconds)) => json!({
                             "id": request_id,
                             "ok": true,
-                            "result": make_asr_result(text, duration_seconds)
+                            "result": make_asr_result(
+                                text,
+                                duration_seconds,
+                                Some(preview_text),
+                                Some(committed_text)
+                            )
                         }),
                         Err(error) => json!({
                             "id": request_id,
@@ -682,7 +720,7 @@ fn run_server(mut engine: NativeParakeetEngine) -> Result<(), String> {
                         Ok((text, duration_seconds)) => json!({
                             "id": request_id,
                             "ok": true,
-                            "result": make_asr_result(text, duration_seconds)
+                            "result": make_asr_result(text, duration_seconds, None, None)
                         }),
                         Err(error) => json!({
                             "id": request_id,
@@ -771,6 +809,50 @@ fn collect_new_stable_text(
     }
 
     (normalize_text(&out), newest_sample)
+}
+
+fn collect_preview_text(
+    tokens: &[TimedToken],
+    decode_window_start_sample: usize,
+    committed_until_sample: usize,
+    sample_rate: u32,
+    timestamp_tolerance_samples: usize,
+) -> String {
+    let mut out = String::new();
+    let mut wrote_any = false;
+
+    for token in tokens {
+        let token_end_sample =
+            decode_window_start_sample.saturating_add(seconds_to_samples(sample_rate, token.end));
+
+        if token_end_sample <= committed_until_sample.saturating_add(timestamp_tolerance_samples) {
+            continue;
+        }
+
+        let piece = token.text.trim();
+        if piece.is_empty() {
+            continue;
+        }
+
+        push_text_piece(&mut out, piece, &mut wrote_any);
+    }
+
+    normalize_text(&out)
+}
+
+fn join_preview_text(committed_text: &str, preview_suffix: &str) -> String {
+    let committed = normalize_text(committed_text);
+    let suffix = normalize_text(preview_suffix);
+
+    if committed.is_empty() {
+        return suffix;
+    }
+
+    if suffix.is_empty() {
+        return committed;
+    }
+
+    format!("{committed} {suffix}")
 }
 
 fn append_committed_delta(committed_text: &mut String, delta: &str) {

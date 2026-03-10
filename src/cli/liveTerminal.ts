@@ -123,6 +123,12 @@ const main = async (): Promise<void> => {
     process.stdout.write('---------------------------\n\n');
   });
 
+  if (process.env.DINGOFLOW_TERMINAL_SHOW_PREVIEW === 'true') {
+    app.on('livePreviewChanged', (preview) => {
+      process.stdout.write(`\n[live] ${preview.previewText}\n`);
+    });
+  }
+
   process.stdout.write('Warming up ASR worker...\n');
   await app.warmupWorkers();
   process.stdout.write('Ready.\n');

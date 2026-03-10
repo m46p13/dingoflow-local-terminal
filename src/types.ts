@@ -21,11 +21,18 @@ export interface AsrResult {
   text: string;
   language?: string;
   durationSeconds?: number;
+  previewText?: string;
+  committedText?: string;
 }
 
 export interface DictationResult {
   rawTranscript: string;
   formattedText: string;
+}
+
+export interface LivePreviewState {
+  previewText: string;
+  committedText: string;
 }
 
 export interface AppConfig {
