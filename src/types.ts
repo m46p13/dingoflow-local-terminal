@@ -71,6 +71,9 @@ export interface AppConfig {
   speechOnsetMs: number;
   speechPrerollMs: number;
   speechNoiseFloorMarginDb: number;
+  nativeVadEnabled: boolean;
+  nativeVadMode: 'quality' | 'low-bitrate' | 'aggressive' | 'very-aggressive';
+  nativeVadFrameMs: number;
   parakeetStreamContextLeft: number;
   parakeetStreamContextRight: number;
   parakeetStreamDepth: number;

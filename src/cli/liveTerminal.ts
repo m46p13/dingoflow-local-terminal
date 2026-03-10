@@ -56,7 +56,7 @@ const main = async (): Promise<void> => {
 
   const app = new DingoFlowApp(
     {
-      recorder: new RustNativeRecorder(config.nativeAudioBin),
+      recorder: new RustNativeRecorder(config.nativeAudioBin, config),
       asr: new FasterWhisperClient(config),
       formatter: {
         warmup: async () => undefined,

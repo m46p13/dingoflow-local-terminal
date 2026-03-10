@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { ChildProcess, spawn } from 'node:child_process';
 import { StructuredLogger } from '../../logging/StructuredLogger';
 import { AudioRecorder, RealtimeStreamOptions } from './AudioRecorder';
+import { AppConfig } from '../../types';
 
 const START_TIMEOUT_MS = 3000;
 const AUDIO_SAMPLE_RATE = 16000;
@@ -35,6 +36,10 @@ export class RustNativeRecorder implements AudioRecorder {
 
   public constructor(
     private readonly binaryPath: string,
+    private readonly config?: Pick<
+      AppConfig,
+      'nativeVadEnabled' | 'nativeVadMode' | 'nativeVadFrameMs' | 'speechOnsetMs' | 'speechHangoverMs' | 'speechPrerollMs'
+    >,
     private readonly logger?: StructuredLogger
   ) {}
 
@@ -66,11 +71,23 @@ export class RustNativeRecorder implements AudioRecorder {
       Math.floor((AUDIO_SAMPLE_RATE * BYTES_PER_SAMPLE * options.chunkDurationMs) / 1000)
     );
 
-    const child = spawn(
-      this.binaryPath,
-      ['--sample-rate', String(AUDIO_SAMPLE_RATE)],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    );
+    const args = ['--sample-rate', String(AUDIO_SAMPLE_RATE)];
+    if (this.config?.nativeVadEnabled !== false) {
+      args.push(
+        '--vad-mode',
+        this.config?.nativeVadMode ?? 'very-aggressive',
+        '--vad-frame-ms',
+        String(this.config?.nativeVadFrameMs ?? 20),
+        '--speech-onset-ms',
+        String(this.config?.speechOnsetMs ?? 140),
+        '--speech-hangover-ms',
+        String(this.config?.speechHangoverMs ?? 420),
+        '--speech-preroll-ms',
+        String(this.config?.speechPrerollMs ?? 180)
+      );
+    }
+
+    const child = spawn(this.binaryPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     this.process = child;
 
@@ -185,6 +202,10 @@ export class RustNativeRecorder implements AudioRecorder {
     this.onChunk = undefined;
 
     this.logger?.info('Recorder stopped (native rust)');
+  }
+
+  public providesSpeechGating(): boolean {
+    return this.config?.nativeVadEnabled !== false;
   }
 
   private handleAudioData(chunk: Buffer): void {

@@ -62,6 +62,21 @@ const resolveLatencyPreset = (value: string | undefined): LatencyPreset => {
   return 'balanced';
 };
 
+const resolveNativeVadMode = (
+  value: string | undefined
+): AppConfig['nativeVadMode'] => {
+  if (
+    value === 'quality' ||
+    value === 'low-bitrate' ||
+    value === 'aggressive' ||
+    value === 'very-aggressive'
+  ) {
+    return value;
+  }
+
+  return 'very-aggressive';
+};
+
 interface LatencyPresetDefaults {
   liveStreamChunkMs: number;
   minAsrWindowMs: number;
@@ -243,6 +258,9 @@ export const resolveConfig = (): AppConfig => {
     speechNoiseFloorMarginDb: Number.parseFloat(
       process.env.DINGOFLOW_SPEECH_NOISE_MARGIN_DB ?? '12'
     ),
+    nativeVadEnabled: parseBoolOrDefault(process.env.DINGOFLOW_NATIVE_VAD_ENABLED, true),
+    nativeVadMode: resolveNativeVadMode(process.env.DINGOFLOW_NATIVE_VAD_MODE),
+    nativeVadFrameMs: parseIntOrDefault(process.env.DINGOFLOW_NATIVE_VAD_FRAME_MS, 20),
     parakeetStreamContextLeft: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_LEFT, 64),
     parakeetStreamContextRight: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_CTX_RIGHT, 8),
     parakeetStreamDepth: parseIntOrDefault(process.env.DINGOFLOW_PARAKEET_STREAM_DEPTH, 1),
@@ -355,6 +373,16 @@ export const validateConfig = (config: AppConfig): string[] => {
     config.speechNoiseFloorMarginDb > 30
   ) {
     errors.push('DINGOFLOW_SPEECH_NOISE_MARGIN_DB must be between 3 and 30.');
+  }
+
+  if (!['quality', 'low-bitrate', 'aggressive', 'very-aggressive'].includes(config.nativeVadMode)) {
+    errors.push(
+      'DINGOFLOW_NATIVE_VAD_MODE must be one of: quality, low-bitrate, aggressive, very-aggressive.'
+    );
+  }
+
+  if (![10, 20, 30].includes(config.nativeVadFrameMs)) {
+    errors.push('DINGOFLOW_NATIVE_VAD_FRAME_MS must be one of: 10, 20, 30.');
   }
 
   if (

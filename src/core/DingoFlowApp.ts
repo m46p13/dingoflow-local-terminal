@@ -271,12 +271,18 @@ export class DingoFlowApp extends EventEmitter {
     this.ewmaAsrMs = this.options.normalAsrWindowMs;
     this.speechGate.reset();
     this.latencyTracker.reset();
+    const useNativeSpeechGate = this.deps.recorder.providesSpeechGating?.() === true;
 
     try {
       await this.deps.recorder.startStreaming({
         chunkDurationMs: this.options.liveStreamChunkMs,
         onChunk: (chunk) => {
           if (!this.acceptingAudio || chunk.length === 0) {
+            return;
+          }
+
+          if (useNativeSpeechGate) {
+            this.enqueueAudioChunk(chunk);
             return;
           }
 
@@ -317,6 +323,7 @@ export class DingoFlowApp extends EventEmitter {
       asrBackend: this.options.asrBackend,
       streamChunkMs: this.options.liveStreamChunkMs,
       sampleRate: AUDIO_SAMPLE_RATE,
+      nativeSpeechGate: useNativeSpeechGate,
       adaptiveAsrWindow: this.options.adaptiveAsrWindow,
       minAsrWindowMs: this.options.minAsrWindowMs,
       normalAsrWindowMs: this.options.normalAsrWindowMs,

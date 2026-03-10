@@ -31,7 +31,7 @@ const createRecorder = (config: AppConfig, appLogger: StructuredLogger): AudioRe
       backend: 'native-rust',
       binaryPath: config.nativeAudioBin
     });
-    return new RustNativeRecorder(config.nativeAudioBin, appLogger);
+    return new RustNativeRecorder(config.nativeAudioBin, config, appLogger);
   }
 
   if (fs.existsSync(config.nativeAudioBin)) {
@@ -39,7 +39,7 @@ const createRecorder = (config: AppConfig, appLogger: StructuredLogger): AudioRe
       backend: 'native-rust',
       binaryPath: config.nativeAudioBin
     });
-    return new RustNativeRecorder(config.nativeAudioBin, appLogger);
+    return new RustNativeRecorder(config.nativeAudioBin, config, appLogger);
   }
 
   appLogger.warn('Native recorder binary not found; falling back to ffmpeg capture', {

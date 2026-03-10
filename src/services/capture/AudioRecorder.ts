@@ -7,4 +7,5 @@ export interface AudioRecorder {
   isRecording(): boolean;
   startStreaming(options: RealtimeStreamOptions): Promise<void>;
   stop(): Promise<void>;
+  providesSpeechGating?(): boolean;
 }

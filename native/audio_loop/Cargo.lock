@@ -195,6 +195,7 @@ name = "dingoflow-audio-loop"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "webrtc-vad",
 ]
 
 [[package]]
@@ -757,6 +758,15 @@ checksum = "705eceb4ce901230f8625bd1d665128056ccbe4b7408faa625eec1ba80f59a97"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webrtc-vad"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39a1e40fd6ca90be95459152a2537f2ba4286ee1b13073f7ebcaa74fc94e3008"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
