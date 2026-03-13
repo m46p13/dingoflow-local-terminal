@@ -18,6 +18,14 @@ const clearEnv = (): void => {
   delete process.env.DINGOFLOW_SPOKEN_FORMATTING_COMMANDS;
   delete process.env.DINGOFLOW_HOTKEY;
   delete process.env.DINGOFLOW_PYTHON_BIN;
+  delete process.env.DINGOFLOW_CLOUD_ASR_URL;
+  delete process.env.DINGOFLOW_CLOUD_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.DINGOFLOW_OPENAI_TRANSCRIBE_MODEL;
+  delete process.env.DINGOFLOW_OPENAI_CLEANUP_MODEL;
+  delete process.env.DINGOFLOW_CLOUD_SERVER_PORT;
+  delete process.env.DINGOFLOW_CLOUD_SERVER_ASR_BACKEND;
+  delete process.env.DINGOFLOW_CLOUD_SERVER_ASR_MODEL_PATH;
   delete process.env.DINGOFLOW_ASR_BACKEND;
   delete process.env.DINGOFLOW_ASR_SCRIPT;
   delete process.env.DINGOFLOW_ASR_MODEL_PATH;
@@ -104,6 +112,18 @@ describe('resolveConfig', () => {
     expect(config.asrModelPath).toContain('models/parakeet-tdt-0.6b-v3-onnx');
   });
 
+  it('supports cloud backend config', () => {
+    process.env.DINGOFLOW_ASR_BACKEND = 'cloud';
+    process.env.OPENAI_API_KEY = 'test-key';
+    const config = resolveConfig();
+
+    expect(config.asrBackend).toBe('cloud');
+    expect(config.cloudAsrUrl).toBe('ws://127.0.0.1:8787');
+    expect(config.cloudServerAsrBackend).toBe('parakeet-native');
+    expect(config.openaiTranscribeModel).toBe('gpt-4o-transcribe');
+    expect(config.openaiCleanupModel).toBe('gpt-5-mini');
+  });
+
   it('parses explicit offline override', () => {
     process.env.DINGOFLOW_ENFORCE_OFFLINE = 'false';
     const config = resolveConfig();
@@ -143,8 +163,16 @@ describe('resolveConfig', () => {
 
 describe('validateConfig', () => {
   it('returns no errors for defaults', () => {
+    process.env.OPENAI_API_KEY = 'test-key';
     const config = resolveConfig();
     expect(validateConfig(config)).toEqual([]);
+  });
+
+  it('requires openai api key for cloud backend', () => {
+    process.env.DINGOFLOW_ASR_BACKEND = 'cloud';
+    const config = resolveConfig();
+    const errors = validateConfig(config);
+    expect(errors).toContain('OPENAI_API_KEY must not be empty when DINGOFLOW_ASR_BACKEND=cloud.');
   });
 
   it('flags invalid numeric ranges and missing fields', () => {
@@ -215,7 +243,7 @@ describe('validateConfig', () => {
     const invalidConfig = { ...config, asrBackend: 'bad-backend' as typeof config.asrBackend };
     const errors = validateConfig(invalidConfig);
     expect(errors).toContain(
-      'DINGOFLOW_ASR_BACKEND must be one of: faster-whisper, parakeet-mlx, parakeet-native, whisper-native.'
+      'DINGOFLOW_ASR_BACKEND must be one of: faster-whisper, parakeet-mlx, parakeet-native, whisper-native, cloud.'
     );
   });
 

@@ -3,6 +3,7 @@ import { resolveConfig, validateConfig } from '../config';
 import { DingoFlowApp } from '../core/DingoFlowApp';
 import { RustNativeRecorder } from '../services/capture/RustNativeRecorder';
 import { FasterWhisperClient } from '../services/asr/FasterWhisperClient';
+import { CloudAsrClient } from '../services/asr/CloudAsrClient';
 import { FormatMode } from '../types';
 
 class TerminalInjector {
@@ -57,7 +58,7 @@ const main = async (): Promise<void> => {
   const app = new DingoFlowApp(
     {
       recorder: new RustNativeRecorder(config.nativeAudioBin, config),
-      asr: new FasterWhisperClient(config),
+      asr: config.asrBackend === 'cloud' ? new CloudAsrClient(config) : new FasterWhisperClient(config),
       formatter: {
         warmup: async () => undefined,
         shutdown: async () => undefined,

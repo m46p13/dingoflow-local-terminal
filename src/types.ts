@@ -1,5 +1,5 @@
 export type FormatMode = 'literal' | 'clean' | 'rewrite';
-export type AsrBackend = 'faster-whisper' | 'parakeet-mlx' | 'parakeet-native' | 'whisper-native';
+export type AsrBackend = 'faster-whisper' | 'parakeet-mlx' | 'parakeet-native' | 'whisper-native' | 'cloud';
 export type RecorderBackend = 'auto' | 'ffmpeg' | 'native-rust';
 export type AsrTransport = 'jsonl' | 'framed';
 export type LatencyPreset = 'ultra' | 'balanced' | 'quality';
@@ -45,6 +45,14 @@ export interface AppConfig {
   nativeAsrThreads: number;
   ffmpegInputDevice: string;
   pythonBin: string;
+  cloudAsrUrl: string;
+  cloudApiKey: string;
+  openaiApiKey: string;
+  openaiTranscribeModel: string;
+  openaiCleanupModel: string;
+  cloudServerPort: number;
+  cloudServerAsrBackend: Exclude<AsrBackend, 'cloud'>;
+  cloudServerAsrModelPath: string;
   asrBackend: AsrBackend;
   asrTransport: AsrTransport;
   asrScriptPath: string;

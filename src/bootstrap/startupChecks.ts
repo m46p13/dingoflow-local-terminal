@@ -27,12 +27,12 @@ export const runStartupChecks = async (
   logger.info('Running startup checks');
 
   const expectedAbsolutePaths = [
-    ...(config.asrBackend === 'whisper-native' || config.asrBackend === 'parakeet-native'
+    ...(config.asrBackend === 'whisper-native' || config.asrBackend === 'parakeet-native' || config.asrBackend === 'cloud'
       ? []
       : [{ label: 'ASR script', value: config.asrScriptPath }]),
-    { label: 'Formatter script', value: config.formatterScriptPath },
-    { label: 'ASR model directory', value: config.asrModelPath },
-    { label: 'Formatter model directory', value: config.formatterModelPath }
+    ...(config.asrBackend === 'cloud' ? [] : [{ label: 'Formatter script', value: config.formatterScriptPath }]),
+    ...(config.asrBackend === 'cloud' ? [] : [{ label: 'ASR model directory', value: config.asrModelPath }]),
+    ...(config.asrBackend === 'cloud' ? [] : [{ label: 'Formatter model directory', value: config.formatterModelPath }])
   ];
 
   for (const entry of expectedAbsolutePaths) {
@@ -40,7 +40,11 @@ export const runStartupChecks = async (
     assertPathExists(absolute, entry.label);
   }
 
-  if (config.asrBackend === 'whisper-native') {
+  if (config.asrBackend === 'cloud') {
+    if (!config.cloudAsrUrl.trim()) {
+      throw new Error('Cloud ASR URL is empty. Set DINGOFLOW_CLOUD_ASR_URL.');
+    }
+  } else if (config.asrBackend === 'whisper-native') {
     const nativeAsrPath = path.resolve(config.nativeAsrBin);
     assertPathExists(nativeAsrPath, 'Native ASR binary');
     fs.accessSync(nativeAsrPath, fsConstants.X_OK);

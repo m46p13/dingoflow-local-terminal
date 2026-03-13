@@ -19,6 +19,30 @@ const parseBoolOrDefault = (value: string | undefined, fallback: boolean): boole
 };
 
 const resolveAsrBackend = (value: string | undefined): AsrBackend => {
+  if (value === 'cloud') {
+    return 'cloud';
+  }
+
+  if (value === 'whisper-native') {
+    return 'whisper-native';
+  }
+
+  if (value === 'faster-whisper') {
+    return 'faster-whisper';
+  }
+
+  if (value === 'parakeet-native') {
+    return 'parakeet-native';
+  }
+
+  if (value === 'parakeet-mlx') {
+    return 'parakeet-mlx';
+  }
+
+  return 'parakeet-native';
+};
+
+const resolveCloudServerAsrBackend = (value: string | undefined): Exclude<AsrBackend, 'cloud'> => {
   if (value === 'whisper-native') {
     return 'whisper-native';
   }
@@ -168,14 +192,23 @@ export const resolveConfig = (): AppConfig => {
     asrBackend === 'parakeet-mlx'
       ? path.join(rootDir, 'python', 'parakeet_runner.py')
       : path.join(rootDir, 'python', 'asr_runner.py');
+  const cloudServerAsrBackend = resolveCloudServerAsrBackend(process.env.DINGOFLOW_CLOUD_SERVER_ASR_BACKEND);
+  const defaultModelPathForBackend = (backend: Exclude<AsrBackend, 'cloud'>): string => {
+    if (backend === 'parakeet-mlx') {
+      return path.join(rootDir, 'models', 'parakeet-tdt-0.6b-v3');
+    }
+    if (backend === 'parakeet-native') {
+      return path.join(rootDir, 'models', 'parakeet-tdt-0.6b-v3-onnx');
+    }
+    if (backend === 'whisper-native') {
+      return path.join(rootDir, 'models', 'ggml-base.en.bin');
+    }
+    return path.join(rootDir, 'models', 'faster-whisper-small.en');
+  };
   const defaultAsrModelPath =
-    asrBackend === 'parakeet-mlx'
-      ? path.join(rootDir, 'models', 'parakeet-tdt-0.6b-v3')
-      : asrBackend === 'parakeet-native'
-        ? path.join(rootDir, 'models', 'parakeet-tdt-0.6b-v3-onnx')
-      : asrBackend === 'whisper-native'
-        ? path.join(rootDir, 'models', 'ggml-base.en.bin')
-        : path.join(rootDir, 'models', 'faster-whisper-small.en');
+    asrBackend === 'cloud'
+      ? ''
+      : defaultModelPathForBackend(asrBackend);
 
   return {
     hotkey: process.env.DINGOFLOW_HOTKEY ?? 'CommandOrControl+Shift+Space',
@@ -202,6 +235,15 @@ export const resolveConfig = (): AppConfig => {
     nativeAsrThreads: parseIntOrDefault(process.env.DINGOFLOW_NATIVE_ASR_THREADS, 4),
     ffmpegInputDevice: process.env.DINGOFLOW_FFMPEG_INPUT ?? ':0',
     pythonBin: process.env.DINGOFLOW_PYTHON_BIN ?? 'python3',
+    cloudAsrUrl: process.env.DINGOFLOW_CLOUD_ASR_URL ?? 'ws://127.0.0.1:8787',
+    cloudApiKey: process.env.DINGOFLOW_CLOUD_API_KEY ?? '',
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    openaiTranscribeModel: process.env.DINGOFLOW_OPENAI_TRANSCRIBE_MODEL ?? 'gpt-4o-transcribe',
+    openaiCleanupModel: process.env.DINGOFLOW_OPENAI_CLEANUP_MODEL ?? 'gpt-5-mini',
+    cloudServerPort: parseIntOrDefault(process.env.DINGOFLOW_CLOUD_SERVER_PORT, 8787),
+    cloudServerAsrBackend,
+    cloudServerAsrModelPath:
+      process.env.DINGOFLOW_CLOUD_SERVER_ASR_MODEL_PATH ?? defaultModelPathForBackend(cloudServerAsrBackend),
     asrBackend,
     asrTransport,
     asrScriptPath: process.env.DINGOFLOW_ASR_SCRIPT ?? defaultAsrScript,
@@ -273,9 +315,9 @@ const nativeFramedBackends: AsrBackend[] = ['whisper-native', 'parakeet-native']
 export const validateConfig = (config: AppConfig): string[] => {
   const errors: string[] = [];
 
-  if (!['faster-whisper', 'parakeet-mlx', 'parakeet-native', 'whisper-native'].includes(config.asrBackend)) {
+  if (!['faster-whisper', 'parakeet-mlx', 'parakeet-native', 'whisper-native', 'cloud'].includes(config.asrBackend)) {
     errors.push(
-      'DINGOFLOW_ASR_BACKEND must be one of: faster-whisper, parakeet-mlx, parakeet-native, whisper-native.'
+      'DINGOFLOW_ASR_BACKEND must be one of: faster-whisper, parakeet-mlx, parakeet-native, whisper-native, cloud.'
     );
   }
 
@@ -309,6 +351,18 @@ export const validateConfig = (config: AppConfig): string[] => {
 
   if (!config.nativeParakeetBin.trim()) {
     errors.push('DINGOFLOW_NATIVE_PARAKEET_BIN must not be empty.');
+  }
+
+  if (config.asrBackend === 'cloud' && !config.cloudAsrUrl.trim()) {
+    errors.push('DINGOFLOW_CLOUD_ASR_URL must not be empty when DINGOFLOW_ASR_BACKEND=cloud.');
+  }
+
+  if (config.asrBackend === 'cloud' && !config.openaiApiKey.trim()) {
+    errors.push('OPENAI_API_KEY must not be empty when DINGOFLOW_ASR_BACKEND=cloud.');
+  }
+
+  if (config.cloudServerPort < 1 || config.cloudServerPort > 65535) {
+    errors.push('DINGOFLOW_CLOUD_SERVER_PORT must be between 1 and 65535.');
   }
 
   if (config.nativeAsrThreads < 1 || config.nativeAsrThreads > 64) {

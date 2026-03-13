@@ -7,6 +7,8 @@ import { DingoFlowApp } from './core/DingoFlowApp';
 import { StructuredLogger } from './logging/StructuredLogger';
 import { AppConfig } from './types';
 import { FasterWhisperClient } from './services/asr/FasterWhisperClient';
+import { CloudAsrClient } from './services/asr/CloudAsrClient';
+import { FormatMode } from './types';
 import { AudioRecorder } from './services/capture/AudioRecorder';
 import { FfmpegRecorder } from './services/capture/FfmpegRecorder';
 import { RustNativeRecorder } from './services/capture/RustNativeRecorder';
@@ -67,11 +69,23 @@ const bootstrap = async (): Promise<void> => {
     enforceOffline: config.enforceOffline
   });
 
+  const formatter =
+    config.asrBackend === 'cloud'
+      ? {
+          warmup: async () => undefined,
+          shutdown: async () => undefined,
+          format: async (_mode: FormatMode, transcript: string) => transcript
+        }
+      : new MlxFormatterClient(config, logger);
+
   orchestrator = new DingoFlowApp(
     {
       recorder: createRecorder(config, logger),
-      asr: new FasterWhisperClient(config, logger),
-      formatter: new MlxFormatterClient(config, logger),
+      asr:
+        config.asrBackend === 'cloud'
+          ? new CloudAsrClient(config, logger)
+          : new FasterWhisperClient(config, logger),
+      formatter,
       injector: new TextInjector({
         clipboard,
         nativeBinaryPath: config.nativeTextInjectBin,
